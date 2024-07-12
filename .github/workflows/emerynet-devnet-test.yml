@@ -19,7 +19,7 @@ jobs:
 
       - name: Waiting for Channel to be Initialized
         run: |
-          timeout 300 bash -c "\
+          timeout 600 bash -c "\
           until line=\$(docker logs relayer 2>&1 | grep 'OpenInitChannel'); do
             echo 'Waiting for channel to start...'
             sleep 1
@@ -35,10 +35,10 @@ jobs:
 
       - name: Waiting for Channel Confirmation
         run: |
-          channel_id=\$(cat channel_id.txt)
+          channel_id=$(cat channel_id.txt)
           timeout 300 bash -c "\
-          until docker logs relayer 2>&1 | grep -q 'OpenConfirmChannel.*channel-\$channel_id'; do
-            echo 'Waiting for OpenConfirmChannel with channel-\$channel_id...'
+          until docker logs relayer 2>&1 | grep -q 'OpenConfirmChannel.*$channel_id'; do
+            echo 'Waiting for OpenConfirmChannel with $channel_id...'
             sleep 1
           done
-          echo 'Confirmation log found for channel-\$channel_id.'"
+          echo 'Confirmation log found for $channel_id'"
