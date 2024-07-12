@@ -8,38 +8,46 @@ on:
 
 jobs:
   ibc-testing:
+    name: Inter-Blockchain Communication Testing
     runs-on: ubuntu-latest
 
     env:
       EMERYNET_BALANCE_FILE: emerynet_file.txt
       DEVNET_BALANCE_FILE: devnet_file.txt
+      EMERYNET_CHAIN_ID: agoric-emerynet-8
+      DEVNET_CHAIN_ID: agoricdev-23
+      EMERYNET_NODE: https://emerynet.rpc.agoric.net:443
+      DEVNET_NODE: https://devnet.rpc.agoric.net
+      WALLET_ADDRESS_EMERYNET: agoric10emrzln03exuc9uv98mjwmp95735mjm6k2n9xm
+      WALLET_ADDRESS_DEVNET: agoric1khw65emzav9t0cdhj3aw9x2v7m60jekjdf4whl
+      RELAYER_CONFIG: /workspace/relayer/config-testnet.toml
 
     steps:
-      - name: Checkout repository
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Start Docker Compose services
+      - name: Start Testnet Docker Services
         run: docker-compose -f docker-compose-testnet.yaml up -d
 
-      - name: Query and store balance for Emerynet Wallet
+      - name: Fetch Emerynet Wallet Balance
         run: |
-          agd query bank balances agoric10emrzln03exuc9uv98mjwmp95735mjm6k2n9xm \
-            --chain-id=agoric-emerynet-8 \
-            --node="https://emerynet.rpc.agoric.net:443" \
+          agd query bank balances $WALLET_ADDRESS_EMERYNET \
+            --chain-id=$EMERYNET_CHAIN_ID \
+            --node="$EMERYNET_NODE" \
             -o json | jq -r '.balances[] | select(.denom == "ubld") | .amount | tonumber' > $EMERYNET_BALANCE_FILE
 
-      - name: Query and store balance for Devnet Wallet
+      - name: Fetch Devnet Wallet Balance
         run: |
-          agd query bank balances agoric1khw65emzav9t0cdhj3aw9x2v7m60jekjdf4whl \
-           --chain-id=agoricdev-23 \
-            --node="https://devnet.rpc.agoric.net" \
+          agd query bank balances $WALLET_ADDRESS_DEVNET \
+            --chain-id=$DEVNET_CHAIN_ID \
+            --node="$DEVNET_NODE" \
             -o json | jq -r '.balances[] | select(.denom == "ubld") | .amount | tonumber' > $DEVNET_BALANCE_FILE
 
-      - name: Waiting for Channel to be Initialized
+      - name: Monitor Channel Initialization
         run: |
           timeout 600 bash -c "\
           until line=\$(docker logs relayer 2>&1 | grep 'OpenInitChannel'); do
-            echo 'Waiting for channel to start...'
+            echo 'Waiting for channel initialization...'
             sleep 1
           done
           if [[ -n \$line ]]; then
@@ -47,37 +55,37 @@ jobs:
             echo \"Channel ID extracted: \$channel_id\"
             echo \$channel_id > channel_id.txt
           else
-            echo 'No channel found before timeout.'
+            echo 'Channel initialization timed out.'
             exit 1
           fi"
 
-      - name: Waiting for Channel Confirmation
+      - name: Confirm Channel Status
         run: |
           channel_id=$(cat channel_id.txt)
           timeout 300 bash -c "\
           until docker logs relayer 2>&1 | grep -q 'OpenConfirmChannel.*$channel_id'; do
-            echo 'Waiting for OpenConfirmChannel with $channel_id...'
+            echo 'Awaiting confirmation for channel ID: $channel_id...'
             sleep 1
           done
-          echo 'Confirmation log found for $channel_id'"
+          echo 'Channel ID $channel_id confirmed.'"
 
-      - name: Transfer tokens via IBC
+      - name: Execute IBC Token Transfer
         run: |
-          docker exec relayer hermes --config /workspace/relayer/config-testnet.toml tx ft-transfer --src-chain agoric-emerynet-8 --src-channel $(cat channel_id.txt) \
-          --dst-chain agoricdev-23 --src-port transfer --amount 100 --denom 'ubld' --timeout-seconds 1000 && \
+          docker exec relayer hermes --config $RELAYER_CONFIG tx ft-transfer --src-chain $EMERYNET_CHAIN_ID --src-channel $(cat channel_id.txt) \
+          --dst-chain $DEVNET_CHAIN_ID --src-port transfer --amount 100 --denom 'ubld' --timeout-seconds 1000 && \
           sleep 5
 
-      - name: Check token balance on emerynet chain after transfer
+      - name: Verify Token Transfer on Emerynet
         run: |
-          NEW_EMERYNET_BALANCE=$(agd query bank balances agoric10emrzln03exuc9uv98mjwmp95735mjm6k2n9xm \
-          --chain-id=agoric-emerynet-8 \
-          --node="https://emerynet.rpc.agoric.net:443" \
+          NEW_EMERYNET_BALANCE=$(agd query bank balances $WALLET_ADDRESS_EMERYNET \
+          --chain-id=$EMERYNET_CHAIN_ID \
+          --node="$EMERYNET_NODE" \
           -o json | jq -r '.balances[] | select(.denom == "ubld") | .amount | tonumber')
           ORIGINAL_EMERYNET_BALANCE=$(cat $EMERYNET_BALANCE_FILE)
           BALANCE_DIFFERENCE=$((NEW_EMERYNET_BALANCE - ORIGINAL_EMERYNET_BALANCE))
           if [ "$BALANCE_DIFFERENCE" -ne 100 ]; then
-          echo "Balance difference is not 100. It is $BALANCE_DIFFERENCE."
-          exit 1
+            echo "Token transfer discrepancy detected: Expected 100, found $BALANCE_DIFFERENCE."
+            exit 1
           else
-          echo "Balance difference is 100 as expected."
+            echo "Token transfer validated: Balance difference is exactly 100."
           fi
