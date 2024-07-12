@@ -8,7 +8,6 @@ on:
 
 jobs:
   ibc-testing:
-    name: Inter-Blockchain Communication Testing
     runs-on: ubuntu-latest
 
     env:
@@ -31,21 +30,17 @@ jobs:
 
       - name: Fetch Emerynet Wallet Balance
         run: |
-          agd query bank balances $WALLET_ADDRESS_EMERYNET \
-            --chain-id=$EMERYNET_CHAIN_ID \
-            --node="$EMERYNET_NODE" \
-            -o json | jq -r '.balances[] | select(.denom == "ubld") | .amount | tonumber' > $EMERYNET_BALANCE_FILE
+          curl https://emerynet.api.agoric.net/cosmos/bank/v1beta1/balances/$WALLET_ADDRESS_EMERYNET | 
+          jq -r '.balances[] | select(.denom == "ubld") | .amount | tonumber' > $EMERYNET_BALANCE_FILE
 
       - name: Fetch Devnet Wallet Balance
         run: |
-          agd query bank balances $WALLET_ADDRESS_DEVNET \
-            --chain-id=$DEVNET_CHAIN_ID \
-            --node="$DEVNET_NODE" \
-            -o json | jq -r '.balances[] | select(.denom == "ubld") | .amount | tonumber' > $DEVNET_BALANCE_FILE
+          curl https://devnet.api.agoric.net/cosmos/bank/v1beta1/balances/$WALLET_ADDRESS_DEVNET | 
+          jq -r '.balances[] | select(.denom == "ubld") | .amount | tonumber' > $DEVNET_BALANCE_FILE
 
       - name: Monitor Channel Initialization
         run: |
-          timeout 600 bash -c "\
+          timeout 900 bash -c "\
           until line=\$(docker logs relayer 2>&1 | grep 'OpenInitChannel'); do
             echo 'Waiting for channel initialization...'
             sleep 1
@@ -77,12 +72,10 @@ jobs:
 
       - name: Verify Token Transfer on Emerynet
         run: |
-          NEW_EMERYNET_BALANCE=$(agd query bank balances $WALLET_ADDRESS_EMERYNET \
-          --chain-id=$EMERYNET_CHAIN_ID \
-          --node="$EMERYNET_NODE" \
-          -o json | jq -r '.balances[] | select(.denom == "ubld") | .amount | tonumber')
+          NEW_EMERYNET_BALANCE=$(curl https://emerynet.api.agoric.net/cosmos/bank/v1beta1/balances/$WALLET_ADDRESS_EMERYNET | 
+          jq -r '.balances[] | select(.denom == "ubld") | .amount | tonumber')
           ORIGINAL_EMERYNET_BALANCE=$(cat $EMERYNET_BALANCE_FILE)
-          BALANCE_DIFFERENCE=$((NEW_EMERYNET_BALANCE - ORIGINAL_EMERYNET_BALANCE))
+          BALANCE_DIFFERENCE=$((ORIGINAL_EMERYNET_BALANCE - NEW_EMERYNET_BALANCE))
           if [ "$BALANCE_DIFFERENCE" -ne 100 ]; then
             echo "Token transfer discrepancy detected: Expected 100, found $BALANCE_DIFFERENCE."
             exit 1
