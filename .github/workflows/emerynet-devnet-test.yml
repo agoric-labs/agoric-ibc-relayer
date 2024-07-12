@@ -10,12 +10,30 @@ jobs:
   ibc-testing:
     runs-on: ubuntu-latest
 
+    env:
+      EMERYNET_BALANCE_FILE: emerynet_file.txt
+      DEVNET_BALANCE_FILE: devnet_file.txt
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Start Docker Compose services
         run: docker-compose -f docker-compose-testnet.yaml up -d
+
+      - name: Query and store balance for Emerynet Wallet
+        run: |
+          agd query bank balances agoric10emrzln03exuc9uv98mjwmp95735mjm6k2n9xm \
+            --chain-id=agoric-emerynet-8 \
+            --node="https://emerynet.rpc.agoric.net:443" \
+            -o json | jq -r '.balances[] | select(.denom == "ubld") | .amount | tonumber' > $EMERYNET_BALANCE_FILE
+
+      - name: Query and store balance for Devnet Wallet
+        run: |
+          agd query bank balances agoric1khw65emzav9t0cdhj3aw9x2v7m60jekjdf4whl \
+           --chain-id=agoricdev-23 \
+            --node="https://devnet.rpc.agoric.net" \
+            -o json | jq -r '.balances[] | select(.denom == "ubld") | .amount | tonumber' > $DEVNET_BALANCE_FILE
 
       - name: Waiting for Channel to be Initialized
         run: |
@@ -42,3 +60,9 @@ jobs:
             sleep 1
           done
           echo 'Confirmation log found for $channel_id'"
+
+      - name: Transfer tokens via IBC
+        run: |
+          docker exec relayer hermes --config /workspace/relayer/config-testnet.toml tx ft-transfer --src-chain agoric-emerynet-8 --src-channel $(cat channel_id.txt) \
+          --dst-chain agoricdev-23 --src-port transfer --amount 100 --denom 'ubld' --timeout-seconds 1000 && \
+          sleep 5
