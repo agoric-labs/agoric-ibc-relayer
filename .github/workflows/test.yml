@@ -48,7 +48,8 @@ jobs:
       - name: Transfer tokens via IBC
         run: |
           docker exec relayer hermes --config /workspace/relayer/config.toml tx ft-transfer --src-chain agoric-local-1 --src-channel channel-0 \
-          --dst-chain agoric-local-2 --src-port transfer --amount 100 --denom 'ubld' --timeout-seconds 1000
+          --dst-chain agoric-local-2 --src-port transfer --amount 100 --denom 'ubld' --timeout-seconds 1000 && \
+          sleep 5
 
       - name: Check token balance on chain 1 after transfer
         uses: ./.github/actions/check-balances
