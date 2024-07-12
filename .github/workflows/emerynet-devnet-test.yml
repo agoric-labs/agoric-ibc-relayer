@@ -66,3 +66,18 @@ jobs:
           docker exec relayer hermes --config /workspace/relayer/config-testnet.toml tx ft-transfer --src-chain agoric-emerynet-8 --src-channel $(cat channel_id.txt) \
           --dst-chain agoricdev-23 --src-port transfer --amount 100 --denom 'ubld' --timeout-seconds 1000 && \
           sleep 5
+
+      - name: Check token balance on emerynet chain after transfer
+        run: |
+          NEW_EMERYNET_BALANCE=$(agd query bank balances agoric10emrzln03exuc9uv98mjwmp95735mjm6k2n9xm \
+          --chain-id=agoric-emerynet-8 \
+          --node="https://emerynet.rpc.agoric.net:443" \
+          -o json | jq -r '.balances[] | select(.denom == "ubld") | .amount | tonumber')
+          ORIGINAL_EMERYNET_BALANCE=$(cat $EMERYNET_BALANCE_FILE)
+          BALANCE_DIFFERENCE=$((NEW_EMERYNET_BALANCE - ORIGINAL_EMERYNET_BALANCE))
+          if [ "$BALANCE_DIFFERENCE" -ne 100 ]; then
+          echo "Balance difference is not 100. It is $BALANCE_DIFFERENCE."
+          exit 1
+          else
+          echo "Balance difference is 100 as expected."
+          fi
