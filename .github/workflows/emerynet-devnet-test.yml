@@ -1,0 +1,44 @@
+name: IBC Testing with Emerynet and Devnet
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  ibc-testing:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Start Docker Compose services
+        run: docker-compose -f docker-compose-testnet.yaml up -d
+
+      - name: Waiting for Channel to be Initialized
+        run: |
+          timeout 300 bash -c "\
+          until line=\$(docker logs relayer 2>&1 | grep 'OpenInitChannel'); do
+            echo 'Waiting for channel to start...'
+            sleep 1
+          done
+          if [[ -n \$line ]]; then
+            channel_id=\$(echo \$line | awk -F'channel_id: ' '{print \$2}' | awk -F', ' '{print \$1}')
+            echo \"Channel ID extracted: \$channel_id\"
+            echo \$channel_id > channel_id.txt
+          else
+            echo 'No channel found before timeout.'
+            exit 1
+          fi"
+
+      - name: Waiting for Channel Confirmation
+        run: |
+          channel_id=\$(cat channel_id.txt)
+          timeout 300 bash -c "\
+          until docker logs relayer 2>&1 | grep -q 'OpenConfirmChannel.*channel-\$channel_id'; do
+            echo 'Waiting for OpenConfirmChannel with channel-\$channel_id...'
+            sleep 1
+          done
+          echo 'Confirmation log found for channel-\$channel_id.'"
