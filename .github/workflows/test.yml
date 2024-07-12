@@ -27,82 +27,43 @@ jobs:
             echo 'waiting for relayer to start...'
           done"
 
-      - name: Check and validate token balances on both chains
-        run: |
-          # Define expected values
-          expected_amount="500000000"
-          expected_denom="ubld"
+      - name: Check token balance on chain 1
+        uses: ./.github/actions/check-balances
+        with:
+          container: 'agoric-local-1'
+          address: 'agoric1myfpdaxyj34lqexe9cypu6vrf34xemtfq2a0nt'
+          expected_amount: '500000000'
+          expected_denom: 'ubld'
+          expected_length: '1'
 
-          # Query balance for Chain 1
-          JSON_OUTPUT_CHAIN1=$(docker exec agoric-local-1 agd query bank balances agoric1myfpdaxyj34lqexe9cypu6vrf34xemtfq2a0nt -o json)
-          BALANCES_CHAIN1=$(echo $JSON_OUTPUT_CHAIN1 | jq '.balances')
-          LENGTH_CHAIN1=$(echo $BALANCES_CHAIN1 | jq 'length')
-          AMOUNT_CHAIN1=$(echo $BALANCES_CHAIN1 | jq -r '.[0].amount')
-          DENOM_CHAIN1=$(echo $BALANCES_CHAIN1 | jq -r '.[0].denom')
-
-          # Query balance for Chain 2
-          JSON_OUTPUT_CHAIN2=$(docker exec agoric-local-2 agd query bank balances agoric1aczzle80960fc0vq8gemjuu8ydrql07az7fmur -o json)
-          BALANCES_CHAIN2=$(echo $JSON_OUTPUT_CHAIN2 | jq '.balances')
-          LENGTH_CHAIN2=$(echo $BALANCES_CHAIN2 | jq 'length')
-          AMOUNT_CHAIN2=$(echo $BALANCES_CHAIN2 | jq -r '.[0].amount')
-          DENOM_CHAIN2=$(echo $BALANCES_CHAIN2 | jq -r '.[0].denom')
-
-          # Validate Chain 1
-          if [ "$LENGTH_CHAIN1" -ne 1 ] || [ "$AMOUNT_CHAIN1" != "$expected_amount" ] || [ "$DENOM_CHAIN1" != "$expected_denom" ]; then
-            echo "Failure on Chain 1: Expected 1 entry with amount $expected_amount and denom $expected_denom, found length $LENGTH_CHAIN1, amount $AMOUNT_CHAIN1, denom $DENOM_CHAIN1."
-            exit 1
-          else
-            echo "Success: Chain 1 balance is correct."
-          fi
-
-          # Validate Chain 2  
-          if [ "$LENGTH_CHAIN2" -ne 1 ] || [ "$AMOUNT_CHAIN2" != "$expected_amount" ] || [ "$DENOM_CHAIN2" != "$expected_denom" ]; then
-            echo "Failure on Chain 2: Expected 1 entry with amount $expected_amount and denom $expected_denom, found length $LENGTH_CHAIN2, amount $AMOUNT_CHAIN2, denom $DENOM_CHAIN2."
-            exit 1
-          else
-            echo "Success: Chain 2 balance is correct."
-          fi
+      - name: Check token balance on chain 2
+        uses: ./.github/actions/check-balances
+        with:
+          container: 'agoric-local-2'
+          address: 'agoric1aczzle80960fc0vq8gemjuu8ydrql07az7fmur'
+          expected_amount: '500000000'
+          expected_denom: 'ubld'
+          expected_length: '1'
 
       - name: Transfer tokens via IBC
         run: |
           docker exec relayer hermes --config /workspace/relayer/config.toml tx ft-transfer --src-chain agoric-local-1 --src-channel channel-0 \
           --dst-chain agoric-local-2 --src-port transfer --amount 100 --denom 'ubld' --timeout-seconds 1000
 
-      - name: Check and validate token balances post transfer
-        run: |
-          sleep 5s
-          # Define expected values
-          expected_amount_chain1="499999900"
-          expected_denom_chain1="ubld"
-          expected_amount_chain2="100"
-          expected_denom_chain2="ibc/49C630713B2AB60653F76C0C58D43C2A64956803B4D422CACB6DD4AD016ED846"
+      - name: Check token balance on chain 1 after transfer
+        uses: ./.github/actions/check-balances
+        with:
+          container: 'agoric-local-1'
+          address: 'agoric1myfpdaxyj34lqexe9cypu6vrf34xemtfq2a0nt'
+          expected_amount: '499999900'
+          expected_denom: 'ubld'
+          expected_length: '1'
 
-          # Query balance for Chain 1
-          JSON_OUTPUT_CHAIN1=$(docker exec agoric-local-1 agd query bank balances agoric1myfpdaxyj34lqexe9cypu6vrf34xemtfq2a0nt -o json)
-          BALANCES_CHAIN1=$(echo $JSON_OUTPUT_CHAIN1 | jq '.balances')
-          LENGTH_CHAIN1=$(echo $BALANCES_CHAIN1 | jq 'length')
-          AMOUNT_CHAIN1=$(echo $BALANCES_CHAIN1 | jq -r '.[0].amount')
-          DENOM_CHAIN1=$(echo $BALANCES_CHAIN1 | jq -r '.[0].denom')
-
-          # Query balance for Chain 2
-          JSON_OUTPUT_CHAIN2=$(docker exec agoric-local-2 agd query bank balances agoric1aczzle80960fc0vq8gemjuu8ydrql07az7fmur -o json)
-          BALANCES_CHAIN2=$(echo $JSON_OUTPUT_CHAIN2 | jq '.balances')
-          LENGTH_CHAIN2=$(echo $BALANCES_CHAIN2 | jq 'length')
-          AMOUNT_CHAIN2=$(echo $BALANCES_CHAIN2 | jq -r '.[0].amount')
-          DENOM_CHAIN2=$(echo $BALANCES_CHAIN2 | jq -r '.[0].denom')
-
-          # Validate Chain 1
-          if [ "$LENGTH_CHAIN1" -ne 1 ] || [ "$AMOUNT_CHAIN1" != "$expected_amount_chain1" ] || [ "$DENOM_CHAIN1" != "$expected_denom_chain1" ]; then
-            echo "Failure on Chain 1: Expected 1 entry with amount $expected_amount_chain1 and denom $expected_denom_chain1, found length $LENGTH_CHAIN1, amount $AMOUNT_CHAIN1, denom $DENOM_CHAIN1."
-            exit 1
-          else
-            echo "Success: Chain 1 balance is correct."
-          fi
-
-          # Validate Chain 2  
-          if [ "$LENGTH_CHAIN2" -ne 2 ] || [ "$AMOUNT_CHAIN2" != "$expected_amount_chain2" ] || [ "$DENOM_CHAIN2" != "$expected_denom_chain2" ]; then
-            echo "Failure on Chain 2: Expected 1 entry with amount $expected_amount_chain2 and denom $expected_denom_chain2, found length $LENGTH_CHAIN2, amount $AMOUNT_CHAIN2, denom $DENOM_CHAIN2."
-            exit 1
-          else
-            echo "Success: Chain 2 balance is correct."
-          fi
+      - name: Check token balance on chain 2 after tansfer
+        uses: ./.github/actions/check-balances
+        with:
+          container: 'agoric-local-2'
+          address: 'agoric1aczzle80960fc0vq8gemjuu8ydrql07az7fmur'
+          expected_amount: '100'
+          expected_denom: 'ibc/49C630713B2AB60653F76C0C58D43C2A64956803B4D422CACB6DD4AD016ED846'
+          expected_length: '2'
