@@ -36,7 +36,7 @@ jobs:
       - name: Fetch Devnet Wallet Balance
         run: |
           curl https://devnet.api.agoric.net/cosmos/bank/v1beta1/balances/$WALLET_ADDRESS_DEVNET | 
-          jq -r '.balances[] | select(.denom == "ubld") | .amount | tonumber' > $DEVNET_BALANCE_FILE
+          jq -r '.balances | length' > $DEVNET_BALANCE_FILE
 
       - name: Monitor Channel Initialization
         run: |
@@ -81,4 +81,17 @@ jobs:
             exit 1
           else
             echo "Token transfer validated: Balance difference is exactly 100."
+          fi
+
+      - name: Verify Token Transfer on Devnet
+        run: |
+          sleep 180
+          OLD_BALANCE_LENGTH=$(cat $DEVNET_BALANCE_FILE)
+          NEW_BALANCE_LENGTH=$(curl https://devnet.api.agoric.net/cosmos/bank/v1beta1/balances/$WALLET_ADDRESS_DEVNET | jq -r '.balances | length')
+
+          if [ $OLD_BALANCE_LENGTH -gt $NEW_BALANCE_LENGTH ]
+          then
+              exit 0
+          else
+              exit 1
           fi
