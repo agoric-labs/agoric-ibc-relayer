@@ -25,6 +25,17 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install Agoric globally
+        run: npm install -g agoric
+
+      - name: Locating files for Agoric Relayer
+        run: mkdir -p ~/.ibc-setup && cp -r ibc-setup/* ~/.ibc-setup/
+
       - name: Start Testnet Docker Services
         run: docker-compose -f docker-compose-testnet.yaml up -d
 
