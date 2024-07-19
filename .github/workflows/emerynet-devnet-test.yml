@@ -49,9 +49,43 @@ jobs:
           curl https://devnet.api.agoric.net/cosmos/bank/v1beta1/balances/$WALLET_ADDRESS_DEVNET | 
           jq -r '.balances | length' > $DEVNET_BALANCE_FILE
 
+      - name: Confirm Connection Status
+        run: |
+          timeout 900 bash -c '
+          until docker logs relayer 2>&1 | grep -q "OpenConfirmConnection.*connection_id"; do
+            echo "Awaiting confirmation for connection..."
+            sleep 1
+          done
+
+          echo "Connection confirmed."
+
+          line=$(docker logs relayer 2>&1 | grep "OpenConfirmConnection.*connection_id")
+
+          connection_id=$(echo $line | awk -F "[ ,]" '\''{for(i=1;i<=NF;i++){if($i=="connection_id:"){print $(i+1)}}}'\'')
+          counterparty_connection_id=$(echo $line | awk -F "[ ,]" '\''{for(i=1;i<=NF;i++){if($i=="counterparty_connection_id:"){print $(i+1)}}}'\'')
+
+          if [[ -z "$connection_id" || -z "$counterparty_connection_id" ]]; then
+            echo "Error: Connection ID or Counterparty Connection ID is empty"
+            exit 1
+          fi
+
+          echo "Connection ID: $connection_id"
+          echo "Counterparty Connection ID: $counterparty_connection_id"
+
+          config_file="$HOME/.ibc-setup/app.yaml"
+
+          sed -i "s|^srcConnection: .*|srcConnection: $counterparty_connection_id|" "$config_file"
+          sed -i "s|^destConnection: .*|destConnection: $connection_id|" "$config_file"
+
+          cat "$config_file"
+          '
+
+      - name: Start Agoric Relayer
+        run: agoric ibc-relayer start --poll 10 &
+
       - name: Monitor Channel Initialization
         run: |
-          timeout 900 bash -c "\
+          timeout 360 bash -c "\
           until line=\$(docker logs relayer 2>&1 | grep 'OpenInitChannel'); do
             echo 'Waiting for channel initialization...'
             sleep 1
@@ -68,7 +102,7 @@ jobs:
       - name: Confirm Channel Status
         run: |
           channel_id=$(cat channel_id.txt)
-          timeout 300 bash -c "\
+          timeout 600 bash -c "\
           until docker logs relayer 2>&1 | grep -q 'OpenConfirmChannel.*$channel_id'; do
             echo 'Awaiting confirmation for channel ID: $channel_id...'
             sleep 1
@@ -97,11 +131,13 @@ jobs:
       - name: Verify Token Transfer on Devnet
         run: |
           sleep 180
-          OLD_BALANCE_LENGTH=$(cat $DEVNET_BALANCE_FILE)
-          NEW_BALANCE_LENGTH=$(curl https://devnet.api.agoric.net/cosmos/bank/v1beta1/balances/$WALLET_ADDRESS_DEVNET | jq -r '.balances | length')
+          OLD_BALANCE_LENGTH=$(cat "$DEVNET_BALANCE_FILE")
+          NEW_BALANCE_LENGTH=$(curl -s https://devnet.api.agoric.net/cosmos/bank/v1beta1/balances/"$WALLET_ADDRESS_DEVNET" | jq -r '.balances | length')
 
-          if [ $OLD_BALANCE_LENGTH -gt $NEW_BALANCE_LENGTH ]
-          then
+          echo "Old Balance Length: $OLD_BALANCE_LENGTH"
+          echo "New Balance Length: $NEW_BALANCE_LENGTH"
+
+          if [ "$NEW_BALANCE_LENGTH" -gt "$OLD_BALANCE_LENGTH" ]; then
               exit 0
           else
               exit 1
