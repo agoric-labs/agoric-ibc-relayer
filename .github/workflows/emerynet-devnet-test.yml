@@ -1,11 +1,8 @@
 name: IBC Testing with Emerynet and Devnet
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
-
+  workflow_dispatch: 
+    
 jobs:
   ibc-testing:
     runs-on: ubuntu-latest
