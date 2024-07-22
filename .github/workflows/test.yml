@@ -1,0 +1,70 @@
+name: IBC Testing with Local Chains
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  ibc-testing:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t a3p:local .
+
+      - name: Start Docker Compose services
+        run: docker-compose up -d
+
+      - name: Check if Hermes relayer has started
+        run: |
+          timeout 240 bash -c "\
+          until docker logs relayer 2>&1 | grep -q 'Hermes has started'; do
+            echo 'waiting for relayer to start...'
+          done"
+
+      - name: Check token balance on chain 1
+        uses: ./.github/actions/check-balances
+        with:
+          container: 'agoric-local-1'
+          address: 'agoric1myfpdaxyj34lqexe9cypu6vrf34xemtfq2a0nt'
+          expected_amount: '500000000'
+          expected_denom: 'ubld'
+          expected_length: '1'
+
+      - name: Check token balance on chain 2
+        uses: ./.github/actions/check-balances
+        with:
+          container: 'agoric-local-2'
+          address: 'agoric1aczzle80960fc0vq8gemjuu8ydrql07az7fmur'
+          expected_amount: '500000000'
+          expected_denom: 'ubld'
+          expected_length: '1'
+
+      - name: Transfer tokens via IBC
+        run: |
+          docker exec relayer hermes --config /workspace/relayer/config.toml tx ft-transfer --src-chain agoric-local-1 --src-channel channel-0 \
+          --dst-chain agoric-local-2 --src-port transfer --amount 100 --denom 'ubld' --timeout-seconds 1000 && \
+          sleep 5
+
+      - name: Check token balance on chain 1 after transfer
+        uses: ./.github/actions/check-balances
+        with:
+          container: 'agoric-local-1'
+          address: 'agoric1myfpdaxyj34lqexe9cypu6vrf34xemtfq2a0nt'
+          expected_amount: '499999900'
+          expected_denom: 'ubld'
+          expected_length: '1'
+
+      - name: Check token balance on chain 2 after tansfer
+        uses: ./.github/actions/check-balances
+        with:
+          container: 'agoric-local-2'
+          address: 'agoric1aczzle80960fc0vq8gemjuu8ydrql07az7fmur'
+          expected_amount: '100'
+          expected_denom: 'ibc/49C630713B2AB60653F76C0C58D43C2A64956803B4D422CACB6DD4AD016ED846'
+          expected_length: '2'

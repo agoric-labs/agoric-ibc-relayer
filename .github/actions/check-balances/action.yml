@@ -1,0 +1,41 @@
+name: 'Check Token Balances'
+description: 'Checks token balances on specified blockchain containers.'
+
+inputs:
+  container:
+    description: 'Docker container name'
+    required: true
+  address:
+    description: 'Wallet address to check the balance'
+    required: true
+  expected_amount:
+    description: 'Expected token amount'
+    required: true
+  expected_denom:
+    description: 'Expected token denomination'
+    required: true
+  expected_length:
+    description: 'Expected number of balance entries'
+    required: true
+    default: '1'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Check token balances and validate
+      shell: bash
+      run: |
+        # Fetch and process balances
+        json_output=$(docker exec ${{ inputs.container }} agd query bank balances ${{ inputs.address }} -o json)
+        balances=$(echo "$json_output" | jq '.balances')
+        length=$(echo "$balances" | jq 'length')
+        amount=$(echo "$balances" | jq -r '.[0].amount')
+        denom=$(echo "$balances" | jq -r '.[0].denom')
+
+        # Validate balances
+        if [ "$length" -ne "${{ inputs.expected_length }}" ] || [ "$amount" != "${{ inputs.expected_amount }}" ] || [ "$denom" != "${{ inputs.expected_denom }}" ]; then
+          echo "Failure: Expected ${{ inputs.expected_length }} entries with amount ${{ inputs.expected_amount }} and denom ${{ inputs.expected_denom }}, found length $length, amount $amount, denom $denom."
+          exit 1
+        else
+          echo "Success: Balance check passed with correct length and values."
+        fi
