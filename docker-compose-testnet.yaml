@@ -4,13 +4,38 @@ services:
   relayer:
     image: informalsystems/hermes:v1.7.3
     container_name: relayer
+    depends_on:
+      - agoric-local
     volumes:
       - .:/workspace
       - state:/state
+    networks:
+      chain_network:
     entrypoint: |
       /bin/sh -c "
-        /workspace/relayer/scripts/run-relayer.sh agoric-emerynet-8 agoricdev-23 /workspace/relayer/keys/whale-emerynet.key /workspace/relayer/keys/whale-devnet.key /workspace/relayer/config-testnet.toml
+        /workspace/relayer/scripts/run-relayer.sh agoric-emerynet-8 agoric-local /workspace/relayer/keys/whale-emerynet.key /workspace/relayer/keys/alice.key /workspace/relayer/config-testnet.toml
       "
+
+  agoric-local:
+    image: a3p:local
+    platform: linux/amd64
+    build: .
+    container_name: agoric-local
+    environment:
+      CHAIN_ID: agoric-local
+    volumes:
+      - .:/workspace
+      - state:/state
+    networks:
+      chain_network:
+    ports:
+      - 26656:26656
+      - 26657:26657
+      - 1317:1317
+    entrypoint: /workspace/chain/scripts/run-chain.sh
 
 volumes:
   state:
+
+networks:
+  chain_network:
