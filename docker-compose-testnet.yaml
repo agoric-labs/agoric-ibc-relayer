@@ -9,8 +9,6 @@ services:
     volumes:
       - .:/workspace
       - state:/state
-    networks:
-      chain_network:
     entrypoint: |
       /bin/sh -c "
         /workspace/relayer/scripts/run-relayer.sh agoric-emerynet-8 agoric-local /workspace/relayer/keys/whale-emerynet.key /workspace/relayer/keys/alice.key /workspace/relayer/config-testnet.toml
@@ -26,8 +24,6 @@ services:
     volumes:
       - .:/workspace
       - state:/state
-    networks:
-      chain_network:
     ports:
       - 26656:26656
       - 26657:26657
@@ -36,6 +32,3 @@ services:
 
 volumes:
   state:
-
-networks:
-  chain_network:

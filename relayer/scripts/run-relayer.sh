@@ -16,7 +16,7 @@ hermes --config $CONFIG_FILE keys add --chain $CHAIN1_ID --mnemonic-file $ALICE_
 hermes --config $CONFIG_FILE keys add --chain $CHAIN2_ID --mnemonic-file $BOB_KEY
 
 echo "Waiting for the local chain to start"
-sleep 180
+sleep 150
 echo "Local chain started"
 
 hermes --config $CONFIG_FILE create channel --a-chain $CHAIN1_ID --b-chain $CHAIN2_ID --a-port transfer --b-port transfer --new-client-connection --yes

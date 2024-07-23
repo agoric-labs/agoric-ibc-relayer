@@ -1,84 +1,47 @@
-name: IBC Testing with Emerynet and Devnet
+name: IBC Testing with Emerynet and Local Chain
 
 on:
-  workflow_dispatch: 
-    
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
 jobs:
   ibc-testing:
     runs-on: ubuntu-latest
 
     env:
       EMERYNET_BALANCE_FILE: emerynet_file.txt
-      DEVNET_BALANCE_FILE: devnet_file.txt
+      LOCAL_BALANCE_FILE: local_file.txt
       EMERYNET_CHAIN_ID: agoric-emerynet-8
-      DEVNET_CHAIN_ID: agoricdev-23
-      EMERYNET_NODE: https://emerynet.rpc.agoric.net:443
-      DEVNET_NODE: https://devnet.rpc.agoric.net
+      LOCAL_CHAIN_ID: agoric-local
       WALLET_ADDRESS_EMERYNET: agoric10emrzln03exuc9uv98mjwmp95735mjm6k2n9xm
-      WALLET_ADDRESS_DEVNET: agoric1khw65emzav9t0cdhj3aw9x2v7m60jekjdf4whl
+      WALLET_ADDRESS_LOCAL: agoric1myfpdaxyj34lqexe9cypu6vrf34xemtfq2a0nt
       RELAYER_CONFIG: /workspace/relayer/config-testnet.toml
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '18'
-
-      - name: Install Agoric globally
-        run: npm install -g agoric
-
-      - name: Locating files for Agoric Relayer
-        run: mkdir -p ~/.ibc-setup && cp -r ibc-setup/* ~/.ibc-setup/
-
       - name: Start Testnet Docker Services
         run: docker-compose -f docker-compose-testnet.yaml up -d
 
-      - name: Fetch Emerynet Wallet Balance
+      - name: Check if Hermes relayer has started
+        run: |
+          timeout 420 bash -c "\
+          until docker logs relayer 2>&1 | grep -q 'Hermes has started'; do
+            echo 'waiting for relayer to start...'
+          done"
+
+      - name: Check Emerynet Wallet Balance
         run: |
           curl https://emerynet.api.agoric.net/cosmos/bank/v1beta1/balances/$WALLET_ADDRESS_EMERYNET | 
           jq -r '.balances[] | select(.denom == "ubld") | .amount | tonumber' > $EMERYNET_BALANCE_FILE
 
-      - name: Fetch Devnet Wallet Balance
+      - name: Verify Token Count in Local Chain Wallet
         run: |
-          curl https://devnet.api.agoric.net/cosmos/bank/v1beta1/balances/$WALLET_ADDRESS_DEVNET | 
-          jq -r '.balances | length' > $DEVNET_BALANCE_FILE
-
-      - name: Confirm Connection Status
-        run: |
-          timeout 900 bash -c '
-          until docker logs relayer 2>&1 | grep -q "OpenConfirmConnection.*connection_id"; do
-            echo "Awaiting confirmation for connection..."
-            sleep 1
-          done
-
-          echo "Connection confirmed."
-
-          line=$(docker logs relayer 2>&1 | grep "OpenConfirmConnection.*connection_id")
-
-          connection_id=$(echo $line | awk -F "[ ,]" '\''{for(i=1;i<=NF;i++){if($i=="connection_id:"){print $(i+1)}}}'\'')
-          counterparty_connection_id=$(echo $line | awk -F "[ ,]" '\''{for(i=1;i<=NF;i++){if($i=="counterparty_connection_id:"){print $(i+1)}}}'\'')
-
-          if [[ -z "$connection_id" || -z "$counterparty_connection_id" ]]; then
-            echo "Error: Connection ID or Counterparty Connection ID is empty"
-            exit 1
-          fi
-
-          echo "Connection ID: $connection_id"
-          echo "Counterparty Connection ID: $counterparty_connection_id"
-
-          config_file="$HOME/.ibc-setup/app.yaml"
-
-          sed -i "s|^srcConnection: .*|srcConnection: $counterparty_connection_id|" "$config_file"
-          sed -i "s|^destConnection: .*|destConnection: $connection_id|" "$config_file"
-
-          cat "$config_file"
-          '
-
-      - name: Start Agoric Relayer
-        run: agoric ibc-relayer start --poll 10 &
+          curl http://localhost:1317/cosmos/bank/v1beta1/balances/$WALLET_ADDRESS_LOCAL | 
+          jq -r '.balances | length' > $LOCAL_BALANCE_FILE
 
       - name: Monitor Channel Initialization
         run: |
@@ -109,7 +72,7 @@ jobs:
       - name: Execute IBC Token Transfer
         run: |
           docker exec relayer hermes --config $RELAYER_CONFIG tx ft-transfer --src-chain $EMERYNET_CHAIN_ID --src-channel $(cat channel_id.txt) \
-          --dst-chain $DEVNET_CHAIN_ID --src-port transfer --amount 100 --denom 'ubld' --timeout-seconds 1000 && \
+          --dst-chain $LOCAL_CHAIN_ID --src-port transfer --amount 100 --denom 'ubld' --timeout-seconds 1000 && \
           sleep 5
 
       - name: Verify Token Transfer on Emerynet
@@ -122,14 +85,14 @@ jobs:
             echo "Token transfer discrepancy detected: Expected 100, found $BALANCE_DIFFERENCE."
             exit 1
           else
-            echo "Token transfer validated: Balance difference is exactly 100."
+            echo "Token transfer validated: Balance difference is exactly 100ubld."
           fi
 
-      - name: Verify Token Transfer on Devnet
+      - name: Verify Token Transfer on Local Chain
         run: |
-          sleep 180
-          OLD_BALANCE_LENGTH=$(cat "$DEVNET_BALANCE_FILE")
-          NEW_BALANCE_LENGTH=$(curl -s https://devnet.api.agoric.net/cosmos/bank/v1beta1/balances/"$WALLET_ADDRESS_DEVNET" | jq -r '.balances | length')
+          sleep 120
+          OLD_BALANCE_LENGTH=$(cat "$LOCAL_BALANCE_FILE")
+          NEW_BALANCE_LENGTH=$(curl -s http://localhost:1317/cosmos/bank/v1beta1/balances/"$WALLET_ADDRESS_LOCAL" | jq -r '.balances | length')
 
           echo "Old Balance Length: $OLD_BALANCE_LENGTH"
           echo "New Balance Length: $NEW_BALANCE_LENGTH"
