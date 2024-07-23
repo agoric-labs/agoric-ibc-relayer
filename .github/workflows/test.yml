@@ -22,7 +22,7 @@ jobs:
 
       - name: Check if Hermes relayer has started
         run: |
-          timeout 240 bash -c "\
+          timeout 420 bash -c "\
           until docker logs relayer 2>&1 | grep -q 'Hermes has started'; do
             echo 'waiting for relayer to start...'
           done"
