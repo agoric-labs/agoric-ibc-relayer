@@ -5,19 +5,23 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   ibc-testing:
     runs-on: ubuntu-latest
 
     env:
-      EMERYNET_BALANCE_FILE: emerynet_file.txt
-      LOCAL_BALANCE_FILE: local_file.txt
+      EMERYNET_BALANCE_FILE: emerynet_balance.txt
       EMERYNET_CHAIN_ID: agoric-emerynet-8
       LOCAL_CHAIN_ID: agoric-local
       WALLET_ADDRESS_EMERYNET: agoric10emrzln03exuc9uv98mjwmp95735mjm6k2n9xm
       WALLET_ADDRESS_LOCAL: agoric1myfpdaxyj34lqexe9cypu6vrf34xemtfq2a0nt
       RELAYER_CONFIG: /workspace/relayer/config-testnet.toml
+      TRANSFER_AMOUNT_FROM_EMERYNET: 100
+      TRANSFER_AMOUNT_FROM_LOCAL: 50
+      EMERYNET_API_URL: https://emerynet.api.agoric.net/cosmos/bank/v1beta1/balances
+      LOCAL_API_URL: http://localhost:1317/cosmos/bank/v1beta1/balances
 
     steps:
       - name: Checkout Repository
@@ -34,7 +38,7 @@ jobs:
             echo "Waiting for the Agoric service to be fully ready..."
             echo "Target block height: $TARGET_HEIGHT"
             while true; do
-              response=$(curl --silent http://localhost:26657/abci_info);
+              response=$(curl -s http://localhost:26657/abci_info);
               height=$(echo $response | jq -r ".result.response.last_block_height | tonumber");
               if [ "$height" -ge $TARGET_HEIGHT ]; then
                 echo "Service is ready! Last block height: $height";
@@ -56,15 +60,13 @@ jobs:
             echo 'waiting for relayer to start...'
           done"
 
-      - name: Check Emerynet Wallet Balance
-        run: |
-          curl https://emerynet.api.agoric.net/cosmos/bank/v1beta1/balances/$WALLET_ADDRESS_EMERYNET | 
-          jq -r '.balances[] | select(.denom == "ubld") | .amount | tonumber' > $EMERYNET_BALANCE_FILE
-
-      - name: Verify Token Count in Local Chain Wallet
-        run: |
-          curl http://localhost:1317/cosmos/bank/v1beta1/balances/$WALLET_ADDRESS_LOCAL | 
-          jq -r '.balances | length' > $LOCAL_BALANCE_FILE
+      - name: Store Emerynet Wallet Balance in a file
+        uses: ./.github/actions/store-balances
+        with:
+          url: https://emerynet.api.agoric.net/cosmos/bank/v1beta1/balances
+          address: ${{ env.WALLET_ADDRESS_LOCAL }}
+          denom: ubld
+          file: ${{ env.EMERYNET_BALANCE_FILE }}
 
       - name: Monitor Channel Initialization
         run: |
@@ -92,13 +94,13 @@ jobs:
           done
           echo 'Channel ID $channel_id confirmed.'"
 
-      - name: Execute IBC Token Transfer
+      - name: Execute IBC Token Transfer from Emerynet to Local Chain
         run: |
           docker exec relayer hermes --config $RELAYER_CONFIG tx ft-transfer --src-chain $EMERYNET_CHAIN_ID --src-channel $(cat channel_id.txt) \
-          --dst-chain $LOCAL_CHAIN_ID --src-port transfer --amount 100 --denom 'ubld' --timeout-seconds 1000 && \
+          --dst-chain $LOCAL_CHAIN_ID --src-port transfer --amount $TRANSFER_AMOUNT_FROM_EMERYNET --denom 'ubld' --timeout-seconds 1000 && \
           sleep 5
 
-      - name: Verify Token Transfer on Emerynet
+      - name: Check Token Balance on Emerynet after transfer
         run: |
           NEW_EMERYNET_BALANCE=$(curl https://emerynet.api.agoric.net/cosmos/bank/v1beta1/balances/$WALLET_ADDRESS_EMERYNET | 
           jq -r '.balances[] | select(.denom == "ubld") | .amount | tonumber')
@@ -111,17 +113,43 @@ jobs:
             echo "Token transfer validated: Balance difference is exactly 100ubld."
           fi
 
-      - name: Verify Token Transfer on Local Chain
+      - name: Check Token Balance on Local Chain after transfer
+        uses: ./.github/actions/check-balances
+        with:
+          container: ${{ env.LOCAL_CHAIN_ID }}
+          address: ${{ env.WALLET_ADDRESS_LOCAL }}
+          expected_amount: ${{ env.TRANSFER_AMOUNT_FROM_EMERYNET }}
+          expected_denom: 'ibc/49C630713B2AB60653F76C0C58D43C2A64956803B4D422CACB6DD4AD016ED846'
+          expected_length: '2'
+
+      - name: Store Emerynet Wallet Balance in a file
         run: |
-          timeout 120 bash -c '
+          curl https://emerynet.api.agoric.net/cosmos/bank/v1beta1/balances/$WALLET_ADDRESS_EMERYNET | 
+          jq -r '.balances[] | select(.denom == "ubld") | .amount' > $EMERYNET_BALANCE_FILE
 
-          OLD_BALANCE_LENGTH=$(cat "$LOCAL_BALANCE_FILE")
-          NEW_BALANCE_LENGTH=$(curl -s http://localhost:1317/cosmos/bank/v1beta1/balances/"$WALLET_ADDRESS_LOCAL" | jq -r ".balances | length")
+      - name: Execute IBC Token Transfer from Local Chain to Emerynet
+        run: |
+          docker exec relayer hermes --config $RELAYER_CONFIG tx ft-transfer --src-chain $LOCAL_CHAIN_ID --src-channel channel-0 \
+          --dst-chain $EMERYNET_CHAIN_ID --src-port transfer --amount $TRANSFER_AMOUNT_FROM_LOCAL --denom 'ibc/49C630713B2AB60653F76C0C58D43C2A64956803B4D422CACB6DD4AD016ED846' --timeout-seconds 1000 && \
+          sleep 5
 
-          until [ "$NEW_BALANCE_LENGTH" -gt "$OLD_BALANCE_LENGTH" ]; do
-              NEW_BALANCE_LENGTH=$(curl -s http://localhost:1317/cosmos/bank/v1beta1/balances/"$WALLET_ADDRESS_LOCAL" | jq -r ".balances | length")
+      - name: Check Token Balance on Local Chain after transfer
+        uses: ./.github/actions/check-balances
+        with:
+          container: ${{ env.LOCAL_CHAIN_ID }}
+          address: ${{ env.WALLET_ADDRESS_LOCAL }}
+          expected_amount: '50'
+          expected_denom: 'ibc/49C630713B2AB60653F76C0C58D43C2A64956803B4D422CACB6DD4AD016ED846'
+          expected_length: '2'
 
-              echo "Old Balance Length: $OLD_BALANCE_LENGTH"
-              echo "New Balance Length: $NEW_BALANCE_LENGTH"
+      - name: Check Token Balance on Emerynet after transfer
+        run: |
+          timeout 120 bash -c "\
+          OLD_BALANCE=\$(cat \"\$EMERYNET_BALANCE_FILE\")
+          NEW_BALANCE=\$(curl -s https://emerynet.api.agoric.net/cosmos/bank/v1beta1/balances/\"\$WALLET_ADDRESS_EMERYNET\" | jq -r '.balances[] | select(.denom == \"ubld\") | .amount')
+          until [ \"\$NEW_BALANCE\" -gt \"\$OLD_BALANCE\" ]; do
+              NEW_BALANCE=\$(curl -s https://emerynet.api.agoric.net/cosmos/bank/v1beta1/balances/\"\$WALLET_ADDRESS_EMERYNET\" | jq -r '.balances[] | select(.denom == \"ubld\") | .amount')
+              echo \"Old Balance: \$OLD_BALANCE\"
+              echo \"New Balance: \$NEW_BALANCE\"
           done
-          '
+          "
