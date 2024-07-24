@@ -23,8 +23,31 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Start Testnet Docker Services
-        run: docker-compose -f docker-compose-testnet.yaml up -d
+      - name: Start Agoric Local Chain
+        run: docker-compose -f docker-compose-testnet.yaml up -d agoric-local
+
+      - name: Wait for Local container to be ready
+        run: |
+          timeout 300 bash -c '
+            TARGET_HEIGHT=1261
+            SLEEP=10
+            echo "Waiting for the Agoric service to be fully ready..."
+            echo "Target block height: $TARGET_HEIGHT"
+            while true; do
+              response=$(curl --silent http://localhost:26657/abci_info);
+              height=$(echo $response | jq -r ".result.response.last_block_height | tonumber");
+              if [ "$height" -ge $TARGET_HEIGHT ]; then
+                echo "Service is ready! Last block height: $height";
+                break;
+              else
+                echo "Waiting for last block height to reach $TARGET_HEIGHT. Current height: $height";
+              fi;
+              sleep $SLEEP;
+            done
+          '
+
+      - name: Start Relayer Service
+        run: docker-compose -f docker-compose-testnet.yaml up -d relayer
 
       - name: Check if Hermes relayer has started
         run: |
@@ -91,13 +114,13 @@ jobs:
       - name: Verify Token Transfer on Local Chain
         run: |
           timeout 120 bash -c '
-          
+
           OLD_BALANCE_LENGTH=$(cat "$LOCAL_BALANCE_FILE")
           NEW_BALANCE_LENGTH=$(curl -s http://localhost:1317/cosmos/bank/v1beta1/balances/"$WALLET_ADDRESS_LOCAL" | jq -r ".balances | length")
-    
+
           until [ "$NEW_BALANCE_LENGTH" -gt "$OLD_BALANCE_LENGTH" ]; do
               NEW_BALANCE_LENGTH=$(curl -s http://localhost:1317/cosmos/bank/v1beta1/balances/"$WALLET_ADDRESS_LOCAL" | jq -r ".balances | length")
-          
+
               echo "Old Balance Length: $OLD_BALANCE_LENGTH"
               echo "New Balance Length: $NEW_BALANCE_LENGTH"
           done
