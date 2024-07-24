@@ -28,7 +28,7 @@ jobs:
 
       - name: Check if Hermes relayer has started
         run: |
-          timeout 520 bash -c "\
+          timeout 540 bash -c "\
           until docker logs relayer 2>&1 | grep -q 'Hermes has started'; do
             echo 'waiting for relayer to start...'
           done"
@@ -90,15 +90,15 @@ jobs:
 
       - name: Verify Token Transfer on Local Chain
         run: |
-          sleep 120
+          timeout 120 bash -c '
+          
           OLD_BALANCE_LENGTH=$(cat "$LOCAL_BALANCE_FILE")
-          NEW_BALANCE_LENGTH=$(curl -s http://localhost:1317/cosmos/bank/v1beta1/balances/"$WALLET_ADDRESS_LOCAL" | jq -r '.balances | length')
-
-          echo "Old Balance Length: $OLD_BALANCE_LENGTH"
-          echo "New Balance Length: $NEW_BALANCE_LENGTH"
-
-          if [ "$NEW_BALANCE_LENGTH" -gt "$OLD_BALANCE_LENGTH" ]; then
-              exit 0
-          else
-              exit 1
-          fi
+          NEW_BALANCE_LENGTH=$(curl -s http://localhost:1317/cosmos/bank/v1beta1/balances/"$WALLET_ADDRESS_LOCAL" | jq -r ".balances | length")
+    
+          until [ "$NEW_BALANCE_LENGTH" -gt "$OLD_BALANCE_LENGTH" ]; do
+              NEW_BALANCE_LENGTH=$(curl -s http://localhost:1317/cosmos/bank/v1beta1/balances/"$WALLET_ADDRESS_LOCAL" | jq -r ".balances | length")
+          
+              echo "Old Balance Length: $OLD_BALANCE_LENGTH"
+              echo "New Balance Length: $NEW_BALANCE_LENGTH"
+          done
+          '
