@@ -21,4 +21,4 @@ runs:
       shell: bash
       run: |
         curl "${{ inputs.url }}/${{ inputs.address }}" | 
-        jq -r --arg denom "${{ inputs.denom }}" '.balances[] | select(.denom == $denom) | .amount | tonumber' > "${{ inputs.file }}"
+        jq -r --arg denom "${{ inputs.denom }}" '([.balances[] | select(.denom == $denom) | .amount | tonumber] | if length == 0 then 0 else .[] end)' > "${{ inputs.file }}"

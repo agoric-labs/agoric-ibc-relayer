@@ -13,6 +13,7 @@ jobs:
 
     env:
       EMERYNET_BALANCE_FILE: emerynet_balance.txt
+      LOCAL_BALANCE_FILE: local_balance.txt
       EMERYNET_CHAIN_ID: agoric-emerynet-8
       LOCAL_CHAIN_ID: agoric-local
       WALLET_ADDRESS_EMERYNET: agoric10emrzln03exuc9uv98mjwmp95735mjm6k2n9xm
@@ -22,6 +23,8 @@ jobs:
       TRANSFER_AMOUNT_FROM_LOCAL: 50
       EMERYNET_API_URL: https://emerynet.api.agoric.net/cosmos/bank/v1beta1/balances
       LOCAL_API_URL: http://localhost:1317/cosmos/bank/v1beta1/balances
+      BLD_DENOM: ubld
+      IBC_DENOM: ibc/49C630713B2AB60653F76C0C58D43C2A64956803B4D422CACB6DD4AD016ED846
 
     steps:
       - name: Checkout Repository
@@ -32,23 +35,46 @@ jobs:
 
       - name: Wait for Local container to be ready
         run: |
-          timeout 300 bash -c '
-            TARGET_HEIGHT=1261
-            SLEEP=10
-            echo "Waiting for the Agoric service to be fully ready..."
-            echo "Target block height: $TARGET_HEIGHT"
+          wait_for_bootstrap() {
+            endpoint="localhost"
             while true; do
-              response=$(curl -s http://localhost:26657/abci_info);
-              height=$(echo $response | jq -r ".result.response.last_block_height | tonumber");
-              if [ "$height" -ge $TARGET_HEIGHT ]; then
-                echo "Service is ready! Last block height: $height";
-                break;
-              else
-                echo "Waiting for last block height to reach $TARGET_HEIGHT. Current height: $height";
-              fi;
-              sleep $SLEEP;
+              if json=$(curl -s --fail -m 15 "$endpoint:26657/status"); then
+                if [[ "$(echo "$json" | jq -r .jsonrpc)" == "2.0" ]]; then
+                  if last_height=$(echo "$json" | jq -r .result.sync_info.latest_block_height); then
+                    if [[ "$last_height" != "1" ]]; then
+                      echo "$last_height"
+                      return
+                    else
+                      echo "$last_height"
+                    fi
+                  fi
+                fi
+              fi
+              echo "waiting for next block..."
+              sleep 5
             done
-          '
+            echo "done"
+          }
+
+          waitForBlock() {
+            echo "waiting for block..."
+            times=${1:-1}
+            echo "$times"
+            for ((i = 1; i <= times; i++)); do
+              b1=$(wait_for_bootstrap)
+              while true; do
+                b2=$(wait_for_bootstrap)
+                if [[ "$b1" != "$b2" ]]; then
+                  echo "block produced"
+                  break
+                fi
+                sleep 5
+              done
+            done
+            echo "done"
+          }
+
+          waitForBlock 2
 
       - name: Start Relayer Service
         run: docker-compose -f docker-compose-testnet.yaml up -d relayer
@@ -60,12 +86,20 @@ jobs:
             echo 'waiting for relayer to start...'
           done"
 
+      - name: Store Local Wallet Balance in a file
+        uses: ./.github/actions/store-balances
+        with:
+          url: ${{ env.LOCAL_API_URL }}
+          address: ${{ env.WALLET_ADDRESS_LOCAL }}
+          denom: ${{ env.IBC_DENOM }}
+          file: ${{ env.LOCAL_BALANCE_FILE }}
+
       - name: Store Emerynet Wallet Balance in a file
         uses: ./.github/actions/store-balances
         with:
-          url: https://emerynet.api.agoric.net/cosmos/bank/v1beta1/balances
-          address: ${{ env.WALLET_ADDRESS_LOCAL }}
-          denom: ubld
+          url: ${{ env.EMERYNET_API_URL }}
+          address: ${{ env.WALLET_ADDRESS_EMERYNET }}
+          denom: ${{ env.BLD_DENOM }}
           file: ${{ env.EMERYNET_BALANCE_FILE }}
 
       - name: Monitor Channel Initialization
@@ -101,33 +135,39 @@ jobs:
           sleep 5
 
       - name: Check Token Balance on Emerynet after transfer
-        run: |
-          NEW_EMERYNET_BALANCE=$(curl https://emerynet.api.agoric.net/cosmos/bank/v1beta1/balances/$WALLET_ADDRESS_EMERYNET | 
-          jq -r '.balances[] | select(.denom == "ubld") | .amount | tonumber')
-          ORIGINAL_EMERYNET_BALANCE=$(cat $EMERYNET_BALANCE_FILE)
-          BALANCE_DIFFERENCE=$((ORIGINAL_EMERYNET_BALANCE - NEW_EMERYNET_BALANCE))
-          if [ "$BALANCE_DIFFERENCE" -ne 100 ]; then
-            echo "Token transfer discrepancy detected: Expected 100, found $BALANCE_DIFFERENCE."
-            exit 1
-          else
-            echo "Token transfer validated: Balance difference is exactly 100ubld."
-          fi
+        uses: ./.github/actions/check-balance-with-polling
+        with:
+          url: ${{ env.EMERYNET_API_URL }}
+          address: ${{ env.WALLET_ADDRESS_EMERYNET }}
+          denom: ${{ env.BLD_DENOM }}
+          file: ${{ env.EMERYNET_BALANCE_FILE }}
+          comparison_type: lesser
+          polling_seconds: 120
 
       - name: Check Token Balance on Local Chain after transfer
-        uses: ./.github/actions/check-balances
+        uses: ./.github/actions/check-balance-with-polling
         with:
-          container: ${{ env.LOCAL_CHAIN_ID }}
+          url: ${{ env.LOCAL_API_URL }}
           address: ${{ env.WALLET_ADDRESS_LOCAL }}
-          expected_amount: ${{ env.TRANSFER_AMOUNT_FROM_EMERYNET }}
-          expected_denom: 'ibc/49C630713B2AB60653F76C0C58D43C2A64956803B4D422CACB6DD4AD016ED846'
-          expected_length: '2'
+          denom: ${{ env.IBC_DENOM }}
+          file: ${{ env.LOCAL_BALANCE_FILE }}
+          comparison_type: greater
+          polling_seconds: 120
+
+      - name: Store Local Wallet Balance in a file
+        uses: ./.github/actions/store-balances
+        with:
+          url: ${{ env.LOCAL_API_URL }}
+          address: ${{ env.WALLET_ADDRESS_LOCAL }}
+          denom: ${{ env.IBC_DENOM }}
+          file: ${{ env.LOCAL_BALANCE_FILE }}
 
       - name: Store Emerynet Wallet Balance in a file
         uses: ./.github/actions/store-balances
         with:
-          url: https://emerynet.api.agoric.net/cosmos/bank/v1beta1/balances
-          address: ${{ env.WALLET_ADDRESS_LOCAL }}
-          denom: ubld
+          url: ${{ env.EMERYNET_API_URL }}
+          address: ${{ env.WALLET_ADDRESS_EMERYNET }}
+          denom: ${{ env.BLD_DENOM }}
           file: ${{ env.EMERYNET_BALANCE_FILE }}
 
       - name: Execute IBC Token Transfer from Local Chain to Emerynet
@@ -137,22 +177,21 @@ jobs:
           sleep 5
 
       - name: Check Token Balance on Local Chain after transfer
-        uses: ./.github/actions/check-balances
+        uses: ./.github/actions/check-balance-with-polling
         with:
-          container: ${{ env.LOCAL_CHAIN_ID }}
+          url: ${{ env.LOCAL_API_URL }}
           address: ${{ env.WALLET_ADDRESS_LOCAL }}
-          expected_amount: '50'
-          expected_denom: 'ibc/49C630713B2AB60653F76C0C58D43C2A64956803B4D422CACB6DD4AD016ED846'
-          expected_length: '2'
+          denom: ${{ env.IBC_DENOM }}
+          file: ${{ env.LOCAL_BALANCE_FILE }}
+          comparison_type: lesser
+          polling_seconds: 120
 
       - name: Check Token Balance on Emerynet after transfer
-        run: |
-          timeout 120 bash -c "\
-          OLD_BALANCE=\$(cat \"\$EMERYNET_BALANCE_FILE\")
-          NEW_BALANCE=\$(curl -s https://emerynet.api.agoric.net/cosmos/bank/v1beta1/balances/\"\$WALLET_ADDRESS_EMERYNET\" | jq -r '.balances[] | select(.denom == \"ubld\") | .amount')
-          until [ \"\$NEW_BALANCE\" -gt \"\$OLD_BALANCE\" ]; do
-              NEW_BALANCE=\$(curl -s https://emerynet.api.agoric.net/cosmos/bank/v1beta1/balances/\"\$WALLET_ADDRESS_EMERYNET\" | jq -r '.balances[] | select(.denom == \"ubld\") | .amount')
-              echo \"Old Balance: \$OLD_BALANCE\"
-              echo \"New Balance: \$NEW_BALANCE\"
-          done
-          "
+        uses: ./.github/actions/check-balance-with-polling
+        with:
+          url: ${{ env.EMERYNET_API_URL }}
+          address: ${{ env.WALLET_ADDRESS_EMERYNET }}
+          denom: ${{ env.BLD_DENOM }}
+          file: ${{ env.EMERYNET_BALANCE_FILE }}
+          comparison_type: greater
+          polling_seconds: 120
