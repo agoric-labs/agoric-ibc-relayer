@@ -123,9 +123,12 @@ jobs:
           expected_length: '2'
 
       - name: Store Emerynet Wallet Balance in a file
-        run: |
-          curl https://emerynet.api.agoric.net/cosmos/bank/v1beta1/balances/$WALLET_ADDRESS_EMERYNET | 
-          jq -r '.balances[] | select(.denom == "ubld") | .amount' > $EMERYNET_BALANCE_FILE
+        uses: ./.github/actions/store-balances
+        with:
+          url: https://emerynet.api.agoric.net/cosmos/bank/v1beta1/balances
+          address: ${{ env.WALLET_ADDRESS_LOCAL }}
+          denom: ubld
+          file: ${{ env.EMERYNET_BALANCE_FILE }}
 
       - name: Execute IBC Token Transfer from Local Chain to Emerynet
         run: |
