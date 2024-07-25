@@ -120,13 +120,13 @@ trust_threshold = { numerator = '1', denominator = '3' }
 memo_prefix = 'agoric-emerynet-relay'
 
 [[chains]]
-id = 'agoricdev-23'
-rpc_addr = 'https://devnet.rpc.agoric.net'
-grpc_addr = 'https://devnet.grpc.agoric.net'
-event_source = { mode = 'push', url = 'wss://devnet.rpc.agoric.net:26657/websocket', batch_delay = '500ms' }
+id = 'agoric-local'
+rpc_addr = 'http://agoric-local:26657'
+grpc_addr = 'http://agoric-local:9090'
+event_source = { mode = 'push', url = 'ws://agoric-local:26657/websocket', batch_delay = '500ms' }
 rpc_timeout = '15s'
 account_prefix = 'agoric'
-key_name = 'whale-devnet'
+key_name = 'alice'
 address_type = { derivation = 'cosmos' }
 store_prefix = 'ibc'
 default_gas = 2000000
@@ -137,7 +137,6 @@ max_msg_num = 25
 max_tx_size = 180000
 clock_drift = '15s'
 #max_block_time = '15s'
-trusting_period = '14days'
+trusting_period = '400s'
 trust_threshold = { numerator = '1', denominator = '3' }
-memo_prefix = 'agoric-devnet-relay'
-
+memo_prefix = 'agoric-local-relay'

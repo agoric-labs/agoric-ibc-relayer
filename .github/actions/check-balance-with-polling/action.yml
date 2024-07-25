@@ -1,0 +1,46 @@
+name: 'Check Token Balance With Polling'
+
+inputs:
+  url:
+    description: 'API endpoint for fetching a balance for a wallet'
+    required: true
+  address:
+    description: 'Wallet address to check the balance'
+    required: true
+  denom:
+    description: 'Denom whose amount has to be extracted from the JSON response'
+    required: true
+  file:
+    description: 'Name of the file to place extracted amount of denom'
+    required: true
+  comparison_type:
+    description: 'Type of comparison to perform ("greater" or "lesser")'
+    required: true
+    default: 'greater'
+  polling_seconds:
+    description: 'Polling time in seconds'
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Check token balance and validate
+      shell: bash
+      run: |
+        timeout ${{ inputs.polling_seconds }} bash -c "\
+          OLD_BALANCE=\$(cat ${{ inputs.file }})
+          NEW_BALANCE=\$(curl -s ${{ inputs.url }}/${{ inputs.address }} | jq -r --arg denom '${{ inputs.denom }}' '([.balances[] | select(.denom == \$denom) | .amount | tonumber] | if length == 0 then 0 else .[] end)')
+          
+          COMPARISON_OP='-gt'
+          if [[ ${{ inputs.comparison_type }} == 'lesser' ]]; then
+              COMPARISON_OP='-lt'  
+          fi
+          
+          while true; do
+            if [[ \$COMPARISON_OP == '-gt' && \$NEW_BALANCE -gt \$OLD_BALANCE ]] || [[ \$COMPARISON_OP == '-lt' && \$NEW_BALANCE -lt \$OLD_BALANCE ]]; then
+              break
+            fi
+            NEW_BALANCE=\$(curl -s ${{ inputs.url }}/${{ inputs.address }} | jq -r --arg denom '${{ inputs.denom }}' '([.balances[] | select(.denom == \$denom) | .amount | tonumber] | if length == 0 then 0 else .[] end)')
+            echo \"Old Balance: \$OLD_BALANCE\"
+            echo \"New Balance: \$NEW_BALANCE\"
+          done"

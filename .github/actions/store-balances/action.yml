@@ -1,0 +1,24 @@
+name: 'Storing Token Balance in a File'
+
+inputs:
+  url:
+    description: 'API endpoint for fetching a balance for a wallet'
+    required: true
+  address:
+    description: 'Wallet address to check the balance'
+    required: true
+  denom:
+    description: 'Denom whose amount has to be extracted from the JSON response'
+    required: true
+  file:
+    description: 'Name of the file to place extracted amount of denom'
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Store balance in a file
+      shell: bash
+      run: |
+        curl "${{ inputs.url }}/${{ inputs.address }}" | 
+        jq -r --arg denom "${{ inputs.denom }}" '([.balances[] | select(.denom == $denom) | .amount | tonumber] | if length == 0 then 0 else .[] end)' > "${{ inputs.file }}"
