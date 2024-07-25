@@ -81,12 +81,12 @@ agd query bank balances agoric10emrzln03exuc9uv98mjwmp95735mjm6k2n9xm
 
 # IBC Testing with Emerynet and Local Chain
 
-## Start the local chain
+## Start the Local Chain
 
 First, start your local chain using this command:
 
 ```
-docker-compose -f docker-compose-testnet.yaml up -d agoric-local
+docker-compose -f docker-compose-emerynet-local.yaml up -d agoric-local
 ```
 
 ## Check Local Chain Logs
@@ -113,7 +113,7 @@ Once you see messages showing blocks with a status of commit you can rest assure
 Next, start the Hermes relayer using this command:
 
 ```
-docker-compose -f docker-compose-testnet.yaml up -d relayer
+docker-compose -f docker-compose-emerynet-local.yaml up -d relayer
 ```
 
 ## Check Relayer Logs
@@ -153,7 +153,7 @@ First, ensure you have the new channel ID from the relayer logs (from the previo
 Use the channel ID to execute the following command. Replace <Channel-ID> with the actual channel ID you noted earlier:
 
 ```
-$ docker exec relayer hermes --config /workspace/relayer/config-testnet.toml tx ft-transfer --src-chain agoric-emerynet-8 --src-channel <Channel-ID> \
+docker exec relayer hermes --config /workspace/relayer/config-emerynet-local.toml tx ft-transfer --src-chain agoric-emerynet-8 --src-channel <Channel-ID> \
  --dst-chain agoric-local --src-port transfer --amount 100 --denom 'ubld' --timeout-seconds 1000
 ```
 
@@ -162,7 +162,7 @@ This command transfers 100 units of the `ubld` token from Emerynet to Local Chai
 If you need to transfer tokens from the Local Chain to Emerynet, you can use the `counterparty_channel_id` found in the logs. For reversing transfers, the command would typically use `channel-0` as follows:
 
 ```
-docker exec relayer hermes --config /workspace/relayer/config-testnet.toml tx ft-transfer --src-chain agoric-local --src-channel channel-0 \
+docker exec relayer hermes --config /workspace/relayer/config-emerynet-local.toml tx ft-transfer --src-chain agoric-local --src-channel channel-0 \
  --dst-chain agoric-emerynet-8 --src-port transfer --amount 100 --denom 'ubld' --timeout-seconds 1000
 
 ```
