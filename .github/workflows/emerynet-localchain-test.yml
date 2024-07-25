@@ -18,7 +18,7 @@ jobs:
       LOCAL_CHAIN_ID: agoric-local
       WALLET_ADDRESS_EMERYNET: agoric10emrzln03exuc9uv98mjwmp95735mjm6k2n9xm
       WALLET_ADDRESS_LOCAL: agoric1myfpdaxyj34lqexe9cypu6vrf34xemtfq2a0nt
-      RELAYER_CONFIG: /workspace/relayer/config-testnet.toml
+      RELAYER_CONFIG: /workspace/relayer/config-emerynet-local.toml
       TRANSFER_AMOUNT_FROM_EMERYNET: 100
       TRANSFER_AMOUNT_FROM_LOCAL: 50
       EMERYNET_API_URL: https://emerynet.api.agoric.net/cosmos/bank/v1beta1/balances
@@ -31,7 +31,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Start Agoric Local Chain
-        run: docker-compose -f docker-compose-testnet.yaml up -d agoric-local
+        run: docker-compose -f docker-compose-emerynet-local.yaml up -d agoric-local
 
       - name: Wait for Local container to be ready
         run: |
@@ -77,7 +77,7 @@ jobs:
           waitForBlock 2
 
       - name: Start Relayer Service
-        run: docker-compose -f docker-compose-testnet.yaml up -d relayer
+        run: docker-compose -f docker-compose-emerynet-local.yaml up -d relayer
 
       - name: Check if Hermes relayer has started
         run: |
