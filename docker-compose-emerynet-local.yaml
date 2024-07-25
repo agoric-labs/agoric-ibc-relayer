@@ -11,7 +11,7 @@ services:
       - state:/state
     entrypoint: |
       /bin/sh -c "
-        /workspace/relayer/scripts/run-relayer.sh agoric-emerynet-8 agoric-local /workspace/relayer/keys/whale-emerynet.key /workspace/relayer/keys/alice.key /workspace/relayer/config-testnet.toml
+        /workspace/relayer/scripts/run-relayer.sh agoric-emerynet-8 agoric-local /workspace/relayer/keys/whale-emerynet.key /workspace/relayer/keys/alice.key /workspace/relayer/config-emerynet-local.toml
       "
 
   agoric-local:

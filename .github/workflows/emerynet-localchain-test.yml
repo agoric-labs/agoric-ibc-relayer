@@ -81,10 +81,23 @@ jobs:
 
       - name: Check if Hermes relayer has started
         run: |
-          timeout 540 bash -c "\
+          echo "Waiting for the Relayer to start..."
+          timeout 480 bash -c "\
           until docker logs relayer 2>&1 | grep -q 'Hermes has started'; do
-            echo 'waiting for relayer to start...'
+            sleep 1 
           done"
+        continue-on-error: true
+
+      - name: Output Docker logs
+        run: |
+          echo 'Current logs from the relayer:'
+          docker logs relayer
+
+      - name: Fail workflow if Hermes relayer didn't start
+        if: failure()
+        run: |
+          echo "The Hermes relayer failed to start."
+          exit 1  # Explicitly failing the workflow to prevent subsequent steps from running.
 
       - name: Store Local Wallet Balance in a file
         uses: ./.github/actions/store-balances
@@ -105,8 +118,8 @@ jobs:
       - name: Monitor Channel Initialization
         run: |
           timeout 360 bash -c "\
+          echo 'Waiting for channel initialization...'
           until line=\$(docker logs relayer 2>&1 | grep 'OpenInitChannel'); do
-            echo 'Waiting for channel initialization...'
             sleep 1
           done
           if [[ -n \$line ]]; then
@@ -115,6 +128,7 @@ jobs:
             echo \$channel_id > channel_id.txt
           else
             echo 'Channel initialization timed out.'
+            docker logs relayer
             exit 1
           fi"
 
@@ -122,11 +136,16 @@ jobs:
         run: |
           channel_id=$(cat channel_id.txt)
           timeout 600 bash -c "\
-          until docker logs relayer 2>&1 | grep -q 'OpenConfirmChannel.*$channel_id'; do
-            echo 'Awaiting confirmation for channel ID: $channel_id...'
+          until line=\$(docker logs relayer 2>&1 | grep 'OpenConfirmChannel.*$channel_id'); do
             sleep 1
           done
-          echo 'Channel ID $channel_id confirmed.'"
+          if [[ -n \$line ]]; then
+            echo 'Channel ID $channel_id confirmed.'
+          else
+            echo 'Channel confirmation timed out.'
+            docker logs relayer
+            exit 1
+          fi"
 
       - name: Execute IBC Token Transfer from Emerynet to Local Chain
         run: |
