@@ -18,7 +18,7 @@ jobs:
       LOCAL_CHAIN_ID: agoric-local
       WALLET_ADDRESS_EMERYNET: agoric10emrzln03exuc9uv98mjwmp95735mjm6k2n9xm
       WALLET_ADDRESS_LOCAL: agoric1myfpdaxyj34lqexe9cypu6vrf34xemtfq2a0nt
-      RELAYER_CONFIG: /workspace/relayer/config-testnet.toml
+      RELAYER_CONFIG: /workspace/relayer/config-emerynet-local.toml
       TRANSFER_AMOUNT_FROM_EMERYNET: 100
       TRANSFER_AMOUNT_FROM_LOCAL: 50
       EMERYNET_API_URL: https://emerynet.api.agoric.net/cosmos/bank/v1beta1/balances
@@ -31,7 +31,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Start Agoric Local Chain
-        run: docker-compose -f docker-compose-testnet.yaml up -d agoric-local
+        run: docker-compose -f docker-compose-emerynet-local.yaml up -d agoric-local
 
       - name: Wait for Local container to be ready
         run: |
@@ -74,17 +74,27 @@ jobs:
             echo "done"
           }
 
-          waitForBlock 2
+          waitForBlock 8
 
       - name: Start Relayer Service
-        run: docker-compose -f docker-compose-testnet.yaml up -d relayer
+        run: docker-compose -f docker-compose-emerynet-local.yaml up -d relayer
 
       - name: Check if Hermes relayer has started
         run: |
-          timeout 540 bash -c "\
+          echo "Waiting for the Relayer to start..."
+          timeout 480 bash -c "\
           until docker logs relayer 2>&1 | grep -q 'Hermes has started'; do
-            echo 'waiting for relayer to start...'
+            sleep 1 
           done"
+          docker logs relayer
+        continue-on-error: true
+
+      - name: Stop workflow if Hermes relayer didn't start
+        if: failure()
+        run: |
+          echo "The Hermes relayer failed to start."
+          docker logs relayer
+          exit 1  # Explicitly failing the workflow to prevent subsequent steps from running.
 
       - name: Store Local Wallet Balance in a file
         uses: ./.github/actions/store-balances
@@ -104,29 +114,40 @@ jobs:
 
       - name: Monitor Channel Initialization
         run: |
-          timeout 360 bash -c "\
+          timeout 300 bash -c "\
+          echo 'Waiting for channel initialization...'
           until line=\$(docker logs relayer 2>&1 | grep 'OpenInitChannel'); do
-            echo 'Waiting for channel initialization...'
             sleep 1
           done
           if [[ -n \$line ]]; then
             channel_id=\$(echo \$line | awk -F'channel_id: ' '{print \$2}' | awk -F', ' '{print \$1}')
             echo \"Channel ID extracted: \$channel_id\"
             echo \$channel_id > channel_id.txt
-          else
-            echo 'Channel initialization timed out.'
-            exit 1
           fi"
+        continue-on-error: true
+
+      - name: Stop workflow if channel initialization fails
+        if: failure()
+        run: |
+          docker logs relayer
+          exit 1
 
       - name: Confirm Channel Status
         run: |
           channel_id=$(cat channel_id.txt)
-          timeout 600 bash -c "\
+          timeout 300 bash -c "\
           until docker logs relayer 2>&1 | grep -q 'OpenConfirmChannel.*$channel_id'; do
             echo 'Awaiting confirmation for channel ID: $channel_id...'
             sleep 1
           done
           echo 'Channel ID $channel_id confirmed.'"
+        continue-on-error: true
+
+      - name: Stop workflow if channel confirmation fails
+        if: failure()
+        run: |
+          docker logs relayer
+          exit 1
 
       - name: Execute IBC Token Transfer from Emerynet to Local Chain
         run: |
