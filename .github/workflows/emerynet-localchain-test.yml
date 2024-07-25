@@ -89,7 +89,7 @@ jobs:
           docker logs relayer
         continue-on-error: true
 
-      - name: Fail workflow if Hermes relayer didn't start
+      - name: Stop workflow if Hermes relayer didn't start
         if: failure()
         run: |
           echo "The Hermes relayer failed to start."
@@ -126,7 +126,7 @@ jobs:
           fi"
         continue-on-error: true
 
-      - name: Fail workflow if Channel Initialization failed
+      - name: Stop workflow if channel initialization fails
         if: failure()
         run: |
           docker logs relayer
@@ -136,15 +136,14 @@ jobs:
         run: |
           channel_id=$(cat channel_id.txt)
           timeout 300 bash -c "\
-          until line=\$(docker logs relayer 2>&1 | grep 'OpenConfirmChannel.*$channel_id'); do
+          until docker logs relayer 2>&1 | grep -q 'OpenConfirmChannel.*$channel_id'; do
+            echo 'Awaiting confirmation for channel ID: $channel_id...'
             sleep 1
           done
-          if [[ -n \$line ]]; then
-            echo 'Channel ID $channel_id confirmed.'
-          fi"
+          echo 'Channel ID $channel_id confirmed.'"
         continue-on-error: true
 
-      - name: Fail workflow if Channel Confirmation failed
+      - name: Stop workflow if channel confirmation fails
         if: failure()
         run: |
           docker logs relayer
